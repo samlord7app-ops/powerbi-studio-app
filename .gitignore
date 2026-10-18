@@ -1,0 +1,16 @@
+# Exclude sensitive hospital / clinical datasets and generated local reports
+*.csv
+*.xlsx
+*.xls
+*.pbix
+*.pbit
+PowerBI_Data/
+PowerBI_Project/
+Generated_Dashboards/
+PowerBI_Studio_App/uploads/
+Hospital_Medication_Quality_Dashboard.html
+Hospital_Medication_Quality_Theme.json
+DAX_Measures_*.dax
+__pycache__/
+*.pyc
+_pbi_build_temp/

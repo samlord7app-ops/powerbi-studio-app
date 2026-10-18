@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Power BI Studio App — 雲端與本機雙棲智慧儀表板自動生成系統</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root {
+    --primary: #1E40AF;
+    --teal: #0D9488;
+    --rose: #E11D48;
+    --amber: #D97706;
+    --purple: #7C3AED;
+    --bg: #F1F5F9;
+    --card: #FFFFFF;
+    --border: #CBD5E1;
+    --text: #0F172A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; }
+  body { background: var(--bg); color: var(--text); padding-bottom: 64px; }
+  header {
+    background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 55%, #0D9488 100%);
+    color: #fff; padding: 20px 32px; display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 4px 18px rgba(15,23,42,0.22); flex-wrap: wrap; gap: 12px;
+  }
+  header h1 { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+  header p { font-size: 13px; color: #BFDBFE; margin-top: 4px; }
+  .badge-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { background: rgba(255,255,255,0.16); padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.25); }
+  .main { max-width: 1440px; margin: 22px auto; padding: 0 20px; display: flex; flex-direction: column; gap: 20px; }
+  .step-card {
+    background: var(--card); border-radius: 14px; border: 1px solid var(--border);
+    box-shadow: 0 4px 12px rgba(15,23,42,0.05); overflow: hidden;
+  }
+  .step-hdr {
+    background: #F8FAFC; border-bottom: 1px solid var(--border); padding: 13px 20px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+  }
+  .step-hdr h2 { font-size: 16px; font-weight: 700; color: #1E293B; display: flex; align-items: center; gap: 8px; }
+  .step-num {
+    background: var(--primary); color: #fff; width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+  }
+  .step-body { padding: 20px; }
+  .upload-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
+  .dropzone {
+    border: 2px dashed #3B82F6; background: #EFF6FF; border-radius: 12px; padding: 28px;
+    text-align: center; cursor: pointer; transition: 0.2s;
+  }
+  .dropzone:hover, .dropzone.dragover { background: #DBEAFE; border-color: #1D4ED8; }
+  .btn {
+    border: none; border-radius: 8px; padding: 9px 16px; font-size: 13.5px; font-weight: 600;
+    cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #1D4ED8; }
+  .btn-teal { background: var(--teal); color: #fff; }
+  .btn-teal:hover { background: #0F766E; }
+  .btn-amber { background: var(--amber); color: #fff; }
+  .btn-purple { background: var(--purple); color: #fff; }
+  .btn-outline { background: #fff; color: #1E293B; border: 1px solid #94A3B8; }
+  .btn-outline:hover { background: #F1F5F9; }
+  select, input[type="text"] {
+    width: 100%; padding: 8px 11px; border: 1px solid #CBD5E1; border-radius: 7px; font-size: 13px; color: #0F172A;
+  }
+  .anomaly-box {
+    background: #FFFBEB; border: 1px solid #FCD34D; border-left: 5px solid #D97706;
+    border-radius: 8px; padding: 12px 16px; margin-top: 10px; font-size: 13px;
+  }
+  .nl-box {
+    background: linear-gradient(135deg, #EFF6FF 0%, #F0FDFA 100%);
+    border: 1px solid #93C5FD; border-radius: 12px; padding: 16px; margin-bottom: 18px;
+  }
+  .config-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 10px; }
+  .config-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 10px; }
+  .config-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 10px; }
+  .sub-box {
+    background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .sub-box label { font-size: 11.5px; font-weight: 700; color: #475569; }
+  .section-tag { font-size: 14px; font-weight: 700; color: #0F172A; margin: 16px 0 6px 0; display: flex; align-items: center; gap: 6px; }
+  .status-pill { padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; background: #DCFCE7; color: #166534; }
+
+  /* Embedded Live Dashboard Styling */
+  #dashboard-canvas-wrap {
+    border-radius: 14px; overflow: hidden; border: 2px solid #94A3B8;
+    box-shadow: 0 8px 24px rgba(15,23,42,0.12); margin-top: 18px;
+  }
+  .db-banner { padding: 16px 24px; color: #fff; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .db-slicer-bar { background: rgba(255,255,255,0.92); padding: 10px 24px; border-bottom: 1px solid #CBD5E1; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .db-body { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .db-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .db-kpi-card { border-radius: 11px; overflow: hidden; text-align: center; border: 2px solid #CBD5E1; box-shadow: 0 3px 8px rgba(0,0,0,0.06); }
+  .db-kpi-hdr { color: #fff; font-size: 12.5px; font-weight: 700; padding: 7px 10px; }
+  .db-kpi-val { font-size: 28px; font-weight: 800; padding: 14px 10px; }
+  .db-trend-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .db-drill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .db-vis-card { background: #fff; border-radius: 11px; overflow: hidden; border: 1px solid #CBD5E1; box-shadow: 0 3px 10px rgba(0,0,0,0.06); display: flex; flex-direction: column; }
+  .db-vis-hdr { color: #fff; padding: 9px 14px; font-size: 13.5px; font-weight: 700; }
+  .db-drill-crumb { background: #F8FAFC; border-bottom: 1px solid #E2E8F0; padding: 6px 12px; font-size: 11.5px; color: #475569; display: flex; justify-content: space-between; align-items: center; }
+  .db-btn-up { background: #1E40AF; color: #fff; border: none; border-radius: 5px; padding: 2px 9px; font-size: 11px; cursor: pointer; font-weight: 600; display: none; }
+  .db-chart-box { padding: 10px; height: 275px; position: relative; }
+
+  @media (max-width: 1024px) {
+    .upload-grid, .config-grid-4, .config-grid-3, .config-grid-2, .db-kpi-grid, .db-trend-grid, .db-drill-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📊 Power BI Studio App — 專業儀表板自動生成系統</h1>
+    <p>匯入任意 Excel / CSV ➔ 智慧異常偵測與日期遞增排序 ➔ 自然語言與多階層下鑽配置 ➔ 隨時隨地生成 Power BI 與互動式儀表板</p>
+  </div>
+  <div class="badge-row">
+    <span class="badge" id="mode-badge">🔒 純瀏覽器端運算（資料 100% 不外傳）</span>
+    <span class="badge">✨ 支援多階層向下鑽研 (Drill-Down)</span>
+  </div>
+</header>
+
+<div class="main">
+  <!-- STEP 1 -->
+  <div class="step-card">
+    <div class="step-hdr">
+      <h2><span class="step-num">1</span> 拖曳上傳 Excel (.xlsx / .xls / .csv) 或載入範例資料</h2>
+      <span id="file-status" style="font-size:13px;color:#475569;">尚未載入檔案</span>
+    </div>
+    <div class="step-body upload-grid">
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileSelect(this.files[0])">
+        <div style="font-size:34px;margin-bottom:8px;">📂</div>
+        <div style="font-weight:700;font-size:15.5px;color:#1E40AF;">點擊選擇或將 Excel (.xlsx / .csv) 檔案拖曳至此處</div>
+        <div style="font-size:12.5px;color:#475569;margin-top:6px;">
+          支援多工作表 (Sheets)、自動識別民國 7 碼日期 (如 1150701) 與西元日期、所有運算均在您的瀏覽器本機記憶體內完成！
+        </div>
+      </div>
+      <div class="sub-box" style="justify-content:center;gap:10px;">
+        <label style="font-size:13px;color:#0F172A;">🧪 想直接體驗功能？或從本機專案資料夾快速載入：</label>
+        <button class="btn btn-teal" onclick="loadBuiltInDemoData()" style="justify-content:center;padding:11px;">
+          🏥 一鍵載入「醫院用藥品質（重複用藥與DDI）」範例資料集測試
+        </button>
+        <div id="local-file-selector-wrap" style="display:none;gap:8px;">
+          <select id="existing-files-select"></select>
+          <button class="btn btn-primary" onclick="loadSelectedExistingFile()" style="white-space:nowrap;">本機載入</button>
+        </div>
+        <div id="sheets-summary" style="font-size:12.5px;color:#0F766E;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step-card" id="step2-card" style="display:none;">
+    <div class="step-hdr">
+      <h2><span class="step-num">2</span> 智慧資料品質診斷與異常月份過濾</h2>
+      <span class="status-pill" id="row-count-badge"></span>
+    </div>
+    <div class="step-body">
+      <div id="monthly-dist-bar" style="font-size:13px;color:#334155;margin-bottom:6px;"></div>
+      <div id="anomaly-container"></div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step-card" id="step3-card" style="display:none;">
+    <div class="step-hdr">
+      <h2><span class="step-num">3</span> 告訴 APP 您想要哪些數據（自然語言指令框 ＋ 視覺化下鑽設定器）</h2>
+    </div>
+    <div class="step-body">
+      <div class="nl-box">
+        <label style="font-weight:700;font-size:14px;color:#1E3A8A;display:block;margin-bottom:6px;">
+          💬 直接用文字告訴 APP 您想呈現的數據、下鑽關係或排除條件：
+        </label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="nl-prompt" style="flex:1;min-width:260px;" placeholder="例如：排除6月資料，門診科別重複用藥排行下鑽到開立理由，交互作用與跨院DDI下鑽到藥品品項，使用專業多彩風格">
+          <button class="btn btn-teal" onclick="applyNaturalLanguagePrompt()">✨ 智慧解析需求並套用</button>
+        </div>
+      </div>
+
+      <div class="config-grid-3">
+        <div class="sub-box">
+          <label>📌 儀表板主標題</label>
+          <input type="text" id="cfg-title" oninput="CURRENT_CONFIG.dashboard_title=this.value;renderLiveDashboard()">
+        </div>
+        <div class="sub-box">
+          <label>📝 儀表板副標題</label>
+          <input type="text" id="cfg-subtitle" oninput="CURRENT_CONFIG.dashboard_subtitle=this.value;renderLiveDashboard()">
+        </div>
+        <div class="sub-box">
+          <label>🎨 專業視覺配色主題 (即時切換)</label>
+          <select id="cfg-theme" onchange="CURRENT_CONFIG.theme=this.value;renderLiveDashboard()">
+            <option value="executive_colorful">🌈 Executive Colorful 專業多彩風 (推薦)</option>
+            <option value="medical_teal">🏥 Medical Teal & Coral 醫療品質風</option>
+            <option value="modern_sapphire">💎 Modern Sapphire 現代商務藍</option>
+            <option value="warm_sunset">🌅 Warm Sunset 暖陽活力風</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-tag">🏅 頂部 4 張關鍵指標卡 (KPI Cards)</div>
+      <div class="config-grid-4" id="kpi-editors"></div>
+
+      <div class="section-tag">📈 2 張時間趨勢圖 (自動依日期/月份遞增排序)</div>
+      <div class="config-grid-2" id="trend-editors"></div>
+
+      <div class="section-tag">🔍 3 張多階層向下鑽研圖表 (支援第 1 層 ➔ 第 2 層 ➔ 第 3 層 ➔ 第 4 層點擊下鑽)</div>
+      <div class="config-grid-3" id="drill-editors"></div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step-card" id="step4-card" style="display:none;">
+    <div class="step-hdr">
+      <h2><span class="step-num">4</span> 即時互動儀表板預覽 & 一鍵下載匯出</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="downloadStandaloneHTML()">🌐 下載獨立互動式儀表板 (.html)</button>
+        <button class="btn btn-purple" onclick="downloadPowerBIZipBundle()">📦 下載 Power BI 完整資料與主題包 (.zip)</button>
+        <button class="btn btn-teal" id="btn-local-pbit" style="display:none;" onclick="buildLocalPbit()">📊 本機生成並開啟 Power BI (.pbit)</button>
+      </div>
+    </div>
+    <div class="step-body">
+      <div id="local-build-banner" style="display:none;margin-bottom:14px;padding:12px 16px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;font-size:13px;color:#065F46;"></div>
+
+      <!-- Interactive Live Dashboard Preview -->
+      <div id="dashboard-canvas-wrap">
+        <div class="db-banner" id="db-banner">
+          <div>
+            <h3 id="db-title" style="font-size:20px;font-weight:800;"></h3>
+            <div id="db-sub" style="font-size:12.5px;margin-top:3px;"></div>
+          </div>
+          <div style="font-size:12px;background:rgba(255,255,255,0.18);padding:5px 12px;border-radius:99px;">
+            💡 直接點擊下方長條圖或環圈圖任一項目，即可向下鑽研 (Drill-Down)！
+          </div>
+        </div>
+        <div class="db-slicer-bar">
+          <span style="font-size:12.5px;font-weight:700;color:#1E293B;">🔍 互動篩選器：</span>
+          <label style="font-size:12.5px;color:#334155;display:flex;align-items:center;gap:6px;">
+            📅 月份：
+            <select id="slicer-month" style="width:150px;padding:4px 8px;" onchange="renderLiveDashboard()">
+              <option value="ALL">全部月份 (已排除異常)</option>
+            </select>
+          </label>
+          <label style="font-size:12.5px;color:#334155;display:flex;align-items:center;gap:6px;">
+            🏥 部門/分類：
+            <select id="slicer-cat" style="width:200px;padding:4px 8px;" onchange="renderLiveDashboard()">
+              <option value="ALL">全部類別</option>
+            </select>
+          </label>
+        </div>
+        <div class="db-body" id="db-body">
+          <div class="db-kpi-grid" id="db-kpi-grid"></div>
+          <div class="db-trend-grid" id="db-trend-grid"></div>
+          <div class="db-drill-grid" id="db-drill-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// Themes & Built-in Hospital Dictionary
+// ============================================================================
+const THEMES = {
+  executive_colorful: {
+    name: "Executive Colorful 專業多彩風",
+    banner_bg: "#0F172A", banner_sub: "#93C5FD", canvas_bg: "#E2E8F0",
+    data_colors: ["#2563EB", "#0D9488", "#7C3AED", "#EA580C", "#E11D48", "#0284C7", "#D97706", "#4F46E5", "#059669", "#DB2777"],
+    kpi_styles: [
+      {title_bg: "#1E40AF", callout: "#1D4ED8", card_bg: "#EFF6FF", border: "#93C5FD"},
+      {title_bg: "#D97706", callout: "#B45309", card_bg: "#FFFBEB", border: "#FCD34D"},
+      {title_bg: "#0D9488", callout: "#0F766E", card_bg: "#F0FDFA", border: "#5EEAD4"},
+      {title_bg: "#E11D48", callout: "#BE123C", card_bg: "#FFF1F2", border: "#FDA4AF"}
+    ],
+    chart_headers: ["#1E3A8A", "#065F46", "#9F1239", "#4C1D95", "#B45309", "#0F766E"]
+  },
+  medical_teal: {
+    name: "Medical Teal & Coral 醫療品質風",
+    banner_bg: "#134E4A", banner_sub: "#5EEAD4", canvas_bg: "#CCFBF1",
+    data_colors: ["#0D9488", "#0284C7", "#E11D48", "#D97706", "#4F46E5", "#059669", "#7C3AED", "#EA580C", "#2563EB", "#0891B2"],
+    kpi_styles: [
+      {title_bg: "#0F766E", callout: "#115E59", card_bg: "#F0FDFA", border: "#5EEAD4"},
+      {title_bg: "#0369A1", callout: "#075985", card_bg: "#F0F9FF", border: "#7DD3FC"},
+      {title_bg: "#B45309", callout: "#92400E", card_bg: "#FFFBEB", border: "#FCD34D"},
+      {title_bg: "#BE123C", callout: "#9F1239", card_bg: "#FFF1F2", border: "#FDA4AF"}
+    ],
+    chart_headers: ["#0F766E", "#0369A1", "#BE123C", "#1E40AF", "#B45309", "#4338CA"]
+  },
+  modern_sapphire: {
+    name: "Modern Sapphire 現代商務藍",
+    banner_bg: "#1E3A8A", banner_sub: "#BFDBFE", canvas_bg: "#DBEAFE",
+    data_colors: ["#1D4ED8", "#3B82F6", "#6366F1", "#0EA5E9", "#8B5CF6", "#14B8A6", "#F59E0B", "#EC4899", "#10B981", "#64748B"],
+    kpi_styles: [
+      {title_bg: "#1E3A8A", callout: "#1D4ED8", card_bg: "#EFF6FF", border: "#93C5FD"},
+      {title_bg: "#3730A3", callout: "#4338CA", card_bg: "#EEF2FF", border: "#A5B4FC"},
+      {title_bg: "#0369A1", callout: "#0284C7", card_bg: "#F0F9FF", border: "#7DD3FC"},
+      {title_bg: "#0F766E", callout: "#0D9488", card_bg: "#F0FDFA", border: "#5EEAD4"}
+    ],
+    chart_headers: ["#1E3A8A", "#3730A3", "#0369A1", "#0F766E", "#4C1D95", "#1E40AF"]
+  },
+  warm_sunset: {
+    name: "Warm Sunset 暖陽活力風",
+    banner_bg: "#7C2D12", banner_sub: "#FDBA74", canvas_bg: "#FFEDD5",
+    data_colors: ["#EA580C", "#E11D48", "#D97706", "#7C3AED", "#0D9488", "#2563EB", "#DB2777", "#65A30D", "#0284C7", "#4F46E5"],
+    kpi_styles: [
+      {title_bg: "#C2410C", callout: "#9A3412", card_bg: "#FFF7ED", border: "#FDBA74"},
+      {title_bg: "#BE123C", callout: "#9F1239", card_bg: "#FFF1F2", border: "#FDA4AF"},
+      {title_bg: "#B45309", callout: "#92400E", card_bg: "#FFFBEB", border: "#FCD34D"},
+      {title_bg: "#6D28D9", callout: "#5B21B6", card_bg: "#F5F3FF", border: "#C4B5FD"}
+    ],
+    chart_headers: ["#C2410C", "#BE123C", "#B45309", "#6D28D9", "#0F766E", "#1E40AF"]
+  }
+};
+
+const SECTION_MAP = {
+  "01": "家醫科", "02": "內科", "03": "外科", "04": "兒科", "05": "婦產科",
+  "06": "骨科", "07": "神經外科", "08": "泌尿科", "09": "耳鼻喉科", "10": "眼科",
+  "11": "皮膚科", "12": "神經科", "13": "精神科", "14": "復健科", "15": "整形外科",
+  "CV": "心臟血管內科", "GI": "胃腸肝膽科", "CHEST": "胸腔內科", "NEPH": "腎臟內科",
+  "META": "新陳代謝科", "ENDO": "內分泌新陳代謝科", "RHEU": "風濕免疫科", "NEUR": "神經內科",
+  "PSY": "身心醫學科", "FM": "家庭醫學科", "URO": "泌尿科", "ORTH": "骨科", "TCM": "中醫科"
+};
+
+let IS_LOCAL_SERVER = false;
+let WORKBOOK_TABLES = {}; // tableName -> { originalName, rows: [{}], columns: [{name, type}] }
+let CURRENT_INSPECTION = null;
+let CURRENT_CONFIG = null;
+let ACTIVE_CHARTS = [];
+
+// Setup drag & drop
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('dragover');
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    handleFileSelect(e.dataTransfer.files[0]);
+  }
+});
+
+// Check if running on local Python server
+(async function checkLocalServer() {
+  try {
+    const res = await fetch('/api/list_files');
+    if (res.ok) {
+      const data = await res.json();
+      IS_LOCAL_SERVER = true;
+      document.getElementById('mode-badge').textContent = '🖥️ 本機完整版模式 (支援直接產出 .pbit 並開啟 Power BI)';
+      document.getElementById('btn-local-pbit').style.display = 'inline-flex';
+      if (data.files && data.files.length > 0) {
+        const wrap = document.getElementById('local-file-selector-wrap');
+        wrap.style.display = 'flex';
+        const sel = document.getElementById('existing-files-select');
+        sel.innerHTML = data.files.map(f => `<option value="${f.path}">${f.name} (${f.size_kb} KB)</option>`).join('');
+      }
+    }
+  } catch (e) {
+    IS_LOCAL_SERVER = false;
+  }
+})();
+
+function normalizeDateVal(val) {
+  if (val === null || val === undefined || val === '') return '';
+  if (typeof val === 'number' && val > 25000 && val < 60000) {
+    const dt = new Date(Math.round((val - 25569) * 86400 * 1000));
+    return dt.toISOString().slice(0, 10);
+  }
+  let s = String(val).trim().replace(/\.0$/, '');
+  const digits = s.replace(/\D/g, '');
+  if (digits.length === 7 && (digits.startsWith('10') || digits.startsWith('11') || digits.startsWith('12'))) {
+    const y = parseInt(digits.slice(0, 3), 10) + 1911;
+    const m = digits.slice(3, 5);
+    const d = digits.slice(5, 7);
+    return `${y}-${m}-${d}`;
+  }
+  if (digits.length === 8 && (digits.startsWith('19') || digits.startsWith('20'))) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  const mRoc = s.match(/^(\d{2,3})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (mRoc && parseInt(mRoc[1], 10) < 200) {
+    const y = parseInt(mRoc[1], 10) + 1911;
+    return `${y}-${mRoc[2].padStart(2, '0')}-${mRoc[3].padStart(2, '0')}`;
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 1990 && parsed.getFullYear() <= 2100) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
+function enrichSheetRows(rows) {
+  if (!rows || rows.length === 0) return [];
+  const cols = Object.keys(rows[0]);
+  let dateCol = cols.find(c => /DATE|日期|年月|時間|DT/i.test(c));
+  if (!dateCol) {
+    dateCol = cols.find(c => {
+      const sample = rows.slice(0, 15).map(r => normalizeDateVal(r[c])).filter(Boolean);
+      return sample.length >= Math.min(5, rows.length * 0.5);
+    });
+  }
+  const secCol = cols.find(c => ['OPDSECTION', '科別代碼', '部門代碼', 'SECTION'].includes(c));
+  const hasMemo = cols.includes('RXUSEMEMO');
+  const hasInhospDDI = cols.includes('UDDMDPNAME') && cols.includes('UDDMDPNAME2');
+  const hasCloudComment = cols.includes('COMMENTS') && !cols.includes('Severity_Level');
+
+  return rows.map(raw => {
+    const r = { ...raw };
+    if (dateCol) {
+      const d = normalizeDateVal(r[dateCol]);
+      r.Date = d;
+      r.YearMonth = d ? d.slice(0, 7) : 'Unknown';
+    }
+    if (secCol && !r.Section_Name) {
+      const code = String(r[secCol] || '').trim();
+      r.Section_Name = SECTION_MAP[code] ? `${SECTION_MAP[code]} (${code})` : code;
+    }
+    if (hasMemo) {
+      const memo = String(r.RXUSEMEMO || '').trim();
+      const codeNm = String(r.HISSYSCODENM || '').trim();
+      const isMeaningless = !memo || /^[\.\,\-\_0-9a-zA-Z]{1,2}$/.test(memo);
+      r.Memo_Quality = isMeaningless ? '無效/空白備註 (., 0, N, f 等)' : '具體臨床備註';
+      r.Is_Meaningless_Memo = isMeaningless ? 1 : 0;
+      if (isMeaningless) {
+        r.Clinical_Reason_Subcategory = codeNm ? `未填具體原因 (${codeNm.slice(0, 8)})` : '未填具體原因';
+      } else if (/出國|遠行|出海|旅遊/.test(memo)) {
+        r.Clinical_Reason_Subcategory = '出國或遠行備藥';
+      } else if (/遺失|弄丟|破損|打破/.test(memo)) {
+        r.Clinical_Reason_Subcategory = '藥品遺失或毀損';
+      } else if (/調整|改藥|加藥|換藥|劑量|血壓|血糖|痛|不適|惡化|發作|住院|急診/.test(memo)) {
+        r.Clinical_Reason_Subcategory = '病情變化/劑量調整';
+      } else if (/提前|提早|連假|颱風|回診|順便|合併|同日/.test(memo)) {
+        r.Clinical_Reason_Subcategory = '配合回診/連假提前領藥';
+      } else {
+        r.Clinical_Reason_Subcategory = '其他具體臨床說明';
+      }
+    }
+    if (hasInhospDDI) {
+      const d1 = String(r.UDDMDPNAME || 'Unknown').trim().slice(0, 22);
+      const d2 = String(r.UDDMDPNAME2 || 'Unknown').trim().slice(0, 22);
+      r.Drug_Pair_Display = `${d1} + ${d2}`;
+    }
+    if (hasCloudComment) {
+      const s = String(r.COMMENTS || '').trim();
+      let sev = '3_需密切監測 (Monitor Closely)';
+      if (/contraindicated|絕對禁忌|禁止併用|不可併用/i.test(s)) sev = '1_絕對禁忌 (Contraindicated)';
+      else if (/avoid|避免併用|不建議併用|嚴重/i.test(s)) sev = '2_建議避免併用 (Avoid Combination)';
+      const pair = (s.split(/[;；\n]/)[0] || '未知藥物組合').slice(0, 45).trim();
+      const parts = pair.split(/\s+and\s+|\s*\+\s*|\s*與\s*/);
+      r.Severity_Level = sev;
+      r.Normalized_Drug_Pair = pair;
+      r.Drug_A = (parts[0] || pair).slice(0, 28).trim();
+      r.Drug_B = (parts[1] || '併用藥品').slice(0, 28).trim();
+    }
+    return r;
+  });
+}
+
+async function handleFileSelect(file) {
+  if (!file) return;
+  document.getElementById('file-status').textContent = `⏳ 正在瀏覽器內剖析 ${file.name}...`;
+  const arrayBuf = await file.arrayBuffer();
+  const wb = XLSX.read(arrayBuf, { type: 'array' });
+  processWorkbookObject(file.name, wb);
+
+  // Also upload to local server if running locally so .pbit generation works seamlessly
+  if (IS_LOCAL_SERVER) {
+    try {
+      await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'X-File-Name': encodeURIComponent(file.name) },
+        body: file
+      });
+    } catch (e) {}
+  }
+}
+
+function processWorkbookObject(fileName, wb) {
+  WORKBOOK_TABLES = {};
+  const sheetsInfo = {};
+  const overallMonths = {};
+  let totalRowsAll = 0;
+
+  wb.SheetNames.forEach(sname => {
+    const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[sname], { defval: '' });
+    if (!rawRows || rawRows.length === 0) return;
+    const rows = enrichSheetRows(rawRows);
+    const tId = sname.replace(/[^\w\u4e00-\u9fff]+/g, '_').replace(/^_|_$/g, '') || 'Table_1';
+    totalRowsAll += rows.length;
+
+    rows.forEach(r => {
+      if (r.YearMonth && r.YearMonth !== 'Unknown') {
+        overallMonths[r.YearMonth] = (overallMonths[r.YearMonth] || 0) + 1;
+      }
+    });
+
+    const colNames = Object.keys(rows[0]);
+    const dateCols = [], catCols = [], numCols = [], textCols = [], colsMeta = [];
+    colNames.forEach(c => {
+      if (c.startsWith('__EMPTY')) return;
+      const vals = rows.map(r => r[c]).filter(v => v !== '' && v !== null && v !== undefined);
+      const uniq = new Set(vals.map(String)).size;
+      const isNum = vals.length > 0 && vals.slice(0, 25).every(v => !isNaN(Number(v))) && !/ID|NO|CODE|代碼|單號|案號|DATE|日期/i.test(c);
+      let ctype = 'category';
+      if (c === 'Date' || c === 'YearMonth' || /DATE|日期/i.test(c)) {
+        ctype = 'date'; dateCols.push(c);
+      } else if (isNum) {
+        ctype = 'numeric'; numCols.push(c);
+      } else if (uniq <= Math.max(120, rows.length * 0.45)) {
+        ctype = 'category'; catCols.push(c);
+      } else {
+        ctype = 'text'; textCols.push(c);
+      }
+      colsMeta.push({ name: c, type: ctype, distinct_count: uniq });
+    });
+
+    WORKBOOK_TABLES[tId] = { originalName: sname, rows, columns: colsMeta };
+    sheetsInfo[tId] = {
+      original_sheet_name: sname,
+      table_name: tId,
+      row_count: rows.length,
+      columns: colsMeta,
+      date_columns: dateCols,
+      category_columns: catCols,
+      numeric_columns: numCols,
+      text_columns: textCols
+    };
+  });
+
+  // Detect sparse month anomalies (< 2% of total dated rows)
+  const sortedMonths = Object.keys(overallMonths).sort();
+  const totalDated = Object.values(overallMonths).reduce((a, b) => a + b, 0);
+  const anomalies = [];
+  const recExclude = [];
+  if (totalDated > 0 && sortedMonths.length > 1) {
+    sortedMonths.forEach(ym => {
+      const cnt = overallMonths[ym];
+      const ratio = cnt / totalDated;
+      if (ratio < 0.025 || (cnt < 15 && totalDated > 300)) {
+        anomalies.push({
+          month: ym, count: cnt,
+          message: `偵測到【${ym}】僅有 ${cnt} 筆資料（佔全體 ${(ratio*100).toFixed(2)}%），疑似異常殘留資料，已預設勾選排除。`
+        });
+        recExclude.push(ym);
+      }
+    });
+  }
+
+  const defaultConfig = buildDefaultConfig(fileName, sheetsInfo, recExclude);
+  CURRENT_INSPECTION = {
+    file_name: fileName,
+    total_sheets: Object.keys(sheetsInfo).length,
+    total_rows: totalRowsAll,
+    monthly_distribution: overallMonths,
+    anomalies,
+    sheets: sheetsInfo,
+    recommended_config: defaultConfig
+  };
+  onInspectionLoaded(CURRENT_INSPECTION);
+}
+
+function buildDefaultConfig(fileName, sheetsInfo, excludeMonths) {
+  const tNames = Object.keys(sheetsInfo);
+  const primary = tNames[0];
+  const baseTitle = fileName.replace(/\.[^.]+$/, '');
+  const kpis = [];
+  tNames.slice(0, 4).forEach((t, idx) => {
+    const sm = sheetsInfo[t];
+    kpis.push({ title: `📊 ${sm.original_sheet_name} 總筆數`, table: t, agg: 'COUNTROWS', column: sm.columns[0].name });
+    if (sm.columns.some(c => c.name === 'Is_Meaningless_Memo') && kpis.length < 4) {
+      kpis.push({ title: `✍️ ${sm.original_sheet_name} 無效備註率`, table: t, agg: 'MEANINGLESS_RATE', column: 'Is_Meaningless_Memo' });
+    } else if (sm.numeric_columns.length > 0 && kpis.length < 4) {
+      kpis.push({ title: `📈 ${sm.numeric_columns[0]} 總計`, table: t, agg: 'SUM', column: sm.numeric_columns[0] });
+    }
+  });
+  while (kpis.length < 4) {
+    const sm = sheetsInfo[primary];
+    const col = sm.category_columns[kpis.length % Math.max(1, sm.category_columns.length)] || sm.columns[0].name;
+    kpis.push({ title: `🎯 不重複 ${col} 數`, table: primary, agg: 'DISTINCTCOUNT', column: col });
+  }
+
+  const trendTables = tNames.filter(t => sheetsInfo[t].date_columns.includes('Date'));
+  const tList = trendTables.length ? trendTables : [primary];
+  const trends = tList.slice(0, 2).map((t, idx) => ({
+    title: `📈 每日${sheetsInfo[t].original_sheet_name}趨勢 (依日期遞增排序)`,
+    chart_type: 'areaChart',
+    table: t,
+    date_column: sheetsInfo[t].date_columns.includes('Date') ? 'Date' : sheetsInfo[t].columns[0].name,
+    agg: 'COUNTROWS',
+    value_column: sheetsInfo[t].columns[0].name
+  }));
+  if (trends.length === 1) {
+    const t = tList[0];
+    trends.push({
+      title: `📊 各月份${sheetsInfo[t].original_sheet_name}趨勢 (依月份遞增排序)`,
+      chart_type: 'clusteredColumnChart',
+      table: t,
+      date_column: sheetsInfo[t].date_columns.includes('YearMonth') ? 'YearMonth' : sheetsInfo[t].columns[0].name,
+      agg: 'COUNTROWS',
+      value_column: sheetsInfo[t].columns[0].name
+    });
+  }
+
+  const charts = [0, 1, 2].map(idx => {
+    const t = tNames[idx % tNames.length];
+    const sm = sheetsInfo[t];
+    const allC = sm.columns.map(c => c.name);
+    let levels = [];
+    let title = '';
+    let vtype = 'clusteredBarChart';
+    if (allC.includes('RXUSEMEMO')) {
+      levels = ['Section_Name', 'HISSYSCODENM', 'Clinical_Reason_Subcategory', 'RXUSEMEMO'].filter(x => allC.includes(x));
+      title = `🏥 ${sm.original_sheet_name} 科別排行 (點擊↓下鑽至開立理由)`;
+    } else if (allC.includes('Drug_Pair_Display')) {
+      levels = ['Section_Name', 'Drug_Pair_Display', 'UDDMDPNAME', 'UDDMDPNAME2'].filter(x => allC.includes(x));
+      title = `💊 ${sm.original_sheet_name} 科別排行 (點擊↓下鑽至藥品品項)`;
+    } else if (allC.includes('Severity_Level')) {
+      levels = ['Severity_Level', 'Normalized_Drug_Pair', 'Drug_A', 'Drug_B'].filter(x => allC.includes(x));
+      title = `⚠️ ${sm.original_sheet_name} 嚴重度分佈 (點擊↓下鑽至藥品品項)`;
+      vtype = 'donutChart';
+    } else {
+      const cands = [...sm.category_columns, ...sm.text_columns].filter(c => !['Date', 'YearMonth', 'OPDDATE', 'ID'].includes(c));
+      levels = cands.slice(0, 3);
+      if (idx === 2) {
+        levels = [...levels.slice(1), levels[0]].filter(Boolean);
+        vtype = 'donutChart';
+        title = `🎯 ${sm.original_sheet_name} - ${levels[0] || '項目'} 分佈 (點擊↓下鑽)`;
+      } else {
+        if (idx === 1 && tNames.length === 1 && levels.length >= 2) levels = [levels[1], levels[0], ...levels.slice(2)];
+        title = `🏆 ${sm.original_sheet_name} - ${levels[0] || '項目'} 排行 (點擊↓下鑽)`;
+      }
+    }
+    return {
+      title, chart_type: vtype, table: t,
+      drill_columns: levels.length ? levels : [sm.columns[0].name],
+      agg: 'COUNTROWS', value_column: sm.columns[0].name
+    };
+  });
+
+  return {
+    dashboard_title: `${baseTitle} — 專業數據分析儀表板`,
+    dashboard_subtitle: '支援多階層向下鑽研 (Drill-Down) ｜ 趨勢依日期遞增排序 ｜ 跨電腦通用相容',
+    theme: 'executive_colorful',
+    exclude_months: excludeMonths,
+    kpis: kpis.slice(0, 4),
+    trends: trends.slice(0, 2),
+    charts
+  };
+}
+
+function loadBuiltInDemoData() {
+  const wb = XLSX.utils.book_new();
+  const sections = ['CV', 'META', 'NEUR', 'GI', 'FM', 'PSY', 'ORTH', 'URO'];
+  const reasons = [
+    { code: '提前回診或慢箋慢領', memo: '出國備藥兩個月' },
+    { code: '病情改變(可開慢箋)', memo: '血壓不穩調整劑量' },
+    { code: '提前回診或慢箋慢領', memo: '.' },
+    { code: '其他', memo: '0' },
+    { code: '病情改變(可開慢箋)', memo: '頭暈加開止暈藥' },
+    { code: '提前回診或慢箋慢領', memo: '配合連假提前回診' }
+  ];
+  const drugs = ['Amlodipine 5mg', 'Metformin 500mg', 'Atorvastatin 20mg', 'Aspirin 100mg', 'Clopidogrel 75mg', 'Zolpidem 10mg'];
+  const dupRows = [];
+  // Add 3 anomalous June rows to demonstrate automatic anomaly detection!
+  for (let i = 0; i < 3; i++) {
+    dupRows.push({ OPDDATE: '1150628', OPDSECTION: 'CV', OPDCASENO: `C06_${i}`, UDDMDPNAME: drugs[0], HISSYSCODENM: reasons[0].code, RXUSEMEMO: reasons[0].memo });
+  }
+  for (let m = 7; m <= 9; m++) {
+    for (let d = 1; d <= 28; d += 2) {
+      const count = 3 + ((m + d) % 5);
+      for (let k = 0; k < count; k++) {
+        const sec = sections[(d + k) % sections.length];
+        const rObj = reasons[(m + d + k) % reasons.length];
+        const drg = drugs[(d + k) % drugs.length];
+        dupRows.push({
+          OPDDATE: `1150${m}${String(d).padStart(2, '0')}`,
+          OPDSECTION: sec,
+          OPDCASENO: `CASE_${m}_${d}_${k}`,
+          UDDMDPNAME: drg,
+          HISSYSCODENM: rObj.code,
+          RXUSEMEMO: rObj.memo
+        });
+      }
+    }
+  }
+  const ddiPairs = [
+    ['Aspirin 100mg', 'Clopidogrel 75mg', '臨床需求'],
+    ['Atorvastatin 20mg', 'Diltiazem 90mg', '會定期監測'],
+    ['Warfarin 5mg', 'Amiodarone 200mg', '臨床需求'],
+    ['Spironolactone 25mg', 'Valsartan 160mg', '會定期監測']
+  ];
+  const inhospRows = [];
+  for (let m = 7; m <= 9; m++) {
+    for (let d = 1; d <= 28; d += 2) {
+      const count = 4 + ((m * d) % 6);
+      for (let k = 0; k < count; k++) {
+        const p = ddiPairs[(d + k) % ddiPairs.length];
+        inhospRows.push({
+          OPDDATE: `1150${m}${String(d).padStart(2, '0')}`,
+          OPDSECTION: sections[(m + d + k) % sections.length],
+          OPDCASENO: `DDI_${m}_${d}_${k}`,
+          UDDMDPNAME: p[0],
+          UDDMDPNAME2: p[1],
+          HISSYSCODENM: p[2]
+        });
+      }
+    }
+  }
+  const cloudComments = [
+    'Amiodarone + Simvastatin; 絕對禁忌 (Contraindicated): 橫紋肌溶解風險',
+    'Clopidogrel + Omeprazole; 建議避免併用 (Avoid): 降低抗血小板療效',
+    'Warfarin + NSAIDs; 建議避免併用 (Avoid): 增加消化道出血風險',
+    'Digoxin + Spironolactone; 需密切監測 (Monitor): 血中濃度上升'
+  ];
+  const cloudRows = [];
+  for (let m = 7; m <= 9; m++) {
+    for (let d = 2; d <= 28; d += 3) {
+      for (let k = 0; k < 3; k++) {
+        cloudRows.push({
+          OPDDATE: `1150${m}${String(d).padStart(2, '0')}`,
+          OPDSECTION: sections[(d + k) % sections.length],
+          CASE_NO: `CL_${m}_${d}_${k}`,
+          COMMENTS: cloudComments[(m + d + k) % cloudComments.length]
+        });
+      }
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dupRows), '重複用藥理由');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inhospRows), '交互作用理由');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cloudRows), 'api.交互作用');
+  processWorkbookObject('醫院門診重複用藥與交互作用統計_範例.xlsx', wb);
+}
+
+async function loadSelectedExistingFile() {
+  const path = document.getElementById('existing-files-select').value;
+  if (!path) return;
+  document.getElementById('file-status').textContent = `⏳ 正在從本機載入 ${path}...`;
+  const res = await fetch('/api/inspect_path', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_path: path })
+  });
+  const data = await res.json();
+  if (data.status === 'ok') {
+    CURRENT_INSPECTION = data.inspection;
+    CURRENT_INSPECTION.local_file_path = path;
+    // Build lightweight preview tables or trigger local build
+    onInspectionLoaded(data.inspection);
+  }
+}
+
+function onInspectionLoaded(info) {
+  CURRENT_CONFIG = JSON.parse(JSON.stringify(info.recommended_config));
+  document.getElementById('file-status').textContent = `✅ 已載入：${info.file_name}`;
+  document.getElementById('row-count-badge').textContent = `共 ${info.total_sheets} 個工作表 / ${info.total_rows.toLocaleString()} 筆資料`;
+
+  const sNames = Object.values(info.sheets).map(s => `${s.original_sheet_name} (${s.row_count.toLocaleString()}筆)`).join(' ｜ ');
+  document.getElementById('sheets-summary').textContent = `已識別工作表：${sNames}`;
+
+  const mDist = Object.entries(info.monthly_distribution || {}).map(([ym, cnt]) => `${ym}: <b>${cnt.toLocaleString()}</b> 筆`).join(' &nbsp;｜&nbsp; ');
+  document.getElementById('monthly-dist-bar').innerHTML = mDist ? `📅 <b>各月份資料筆數分佈：</b> ${mDist}` : '';
+
+  const anomBox = document.getElementById('anomaly-container');
+  anomBox.innerHTML = '';
+  if (info.anomalies && info.anomalies.length > 0) {
+    info.anomalies.forEach(a => {
+      const checked = CURRENT_CONFIG.exclude_months.includes(a.month) ? 'checked' : '';
+      const div = document.createElement('div');
+      div.className = 'anomaly-box';
+      div.innerHTML = `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:#92400E;">
+          <input type="checkbox" class="exclude-month-cb" value="${a.month}" ${checked} onchange="syncExcludedMonths()">
+          ⚠️ 智慧異常提示：${a.message}
+        </label>`;
+      anomBox.appendChild(div);
+    });
+  } else {
+    anomBox.innerHTML = `<div style="color:#059669;font-size:13px;font-weight:600;">✅ 各期間資料量分佈均勻，無異常少量殘留月份。</div>`;
+  }
+
+  document.getElementById('step2-card').style.display = 'block';
+  document.getElementById('step3-card').style.display = 'block';
+  document.getElementById('step4-card').style.display = 'block';
+
+  populateSlicerDropdowns();
+  renderConfigEditors();
+  renderLiveDashboard();
+}
+
+function populateSlicerDropdowns() {
+  const mSel = document.getElementById('slicer-month');
+  const months = Object.keys(CURRENT_INSPECTION.monthly_distribution || {}).sort();
+  mSel.innerHTML = '<option value="ALL">全部月份 (已排除異常)</option>' +
+    months.map(m => `<option value="${m}">${m}</option>`).join('');
+
+  const cSel = document.getElementById('slicer-cat');
+  const firstTable = Object.keys(WORKBOOK_TABLES)[0];
+  if (firstTable && WORKBOOK_TABLES[firstTable]) {
+    const rows = WORKBOOK_TABLES[firstTable].rows;
+    const secCol = rows[0] && ('Section_Name' in rows[0] ? 'Section_Name' : Object.keys(rows[0])[0]);
+    const vals = Array.from(new Set(rows.map(r => r[secCol]).filter(Boolean))).sort().slice(0, 60);
+    cSel.innerHTML = `<option value="ALL">全部 (${secCol})</option>` +
+      vals.map(v => `<option value="${v}">${v}</option>`).join('');
+    cSel.dataset.col = secCol;
+  }
+}
+
+function syncExcludedMonths() {
+  const cbs = document.querySelectorAll('.exclude-month-cb');
+  const ex = [];
+  cbs.forEach(cb => { if (cb.checked) ex.push(cb.value); });
+  CURRENT_CONFIG.exclude_months = ex;
+  renderLiveDashboard();
+}
+
+function getTableColumnsOptions(tableName, selectedCol) {
+  const sheet = CURRENT_INSPECTION.sheets[tableName];
+  if (!sheet) return '';
+  return sheet.columns.map(c => `<option value="${c.name}" ${c.name === selectedCol ? 'selected' : ''}>${c.name} (${c.type})</option>`).join('');
+}
+
+function getTablesOptions(selectedTable) {
+  return Object.keys(CURRENT_INSPECTION.sheets).map(t => {
+    const orig = CURRENT_INSPECTION.sheets[t].original_sheet_name;
+    return `<option value="${t}" ${t === selectedTable ? 'selected' : ''}>${orig}</option>`;
+  }).join('');
+}
+
+function renderConfigEditors() {
+  document.getElementById('cfg-title').value = CURRENT_CONFIG.dashboard_title || '';
+  document.getElementById('cfg-subtitle').value = CURRENT_CONFIG.dashboard_subtitle || '';
+  document.getElementById('cfg-theme').value = CURRENT_CONFIG.theme || 'executive_colorful';
+
+  const kpiWrap = document.getElementById('kpi-editors');
+  kpiWrap.innerHTML = '';
+  CURRENT_CONFIG.kpis.forEach((k, i) => {
+    const div = document.createElement('div');
+    div.className = 'sub-box';
+    div.innerHTML = `
+      <label>KPI 卡片 ${i + 1} 標題</label>
+      <input type="text" value="${k.title}" oninput="CURRENT_CONFIG.kpis[${i}].title=this.value;renderLiveDashboard()">
+      <label>資料工作表</label>
+      <select onchange="CURRENT_CONFIG.kpis[${i}].table=this.value;renderConfigEditors();renderLiveDashboard()">${getTablesOptions(k.table)}</select>
+      <label>統計方式</label>
+      <select onchange="CURRENT_CONFIG.kpis[${i}].agg=this.value;renderLiveDashboard()">
+        <option value="COUNTROWS" ${k.agg==='COUNTROWS'?'selected':''}>總筆數 (COUNTROWS)</option>
+        <option value="DISTINCTCOUNT" ${k.agg==='DISTINCTCOUNT'?'selected':''}>不重複計數 (DISTINCTCOUNT)</option>
+        <option value="SUM" ${k.agg==='SUM'?'selected':''}>數值加總 (SUM)</option>
+        <option value="AVERAGE" ${k.agg==='AVERAGE'?'selected':''}>數值平均 (AVERAGE)</option>
+        <option value="MEANINGLESS_RATE" ${k.agg==='MEANINGLESS_RATE'?'selected':''}>無效備註佔比 (%)</option>
+      </select>
+      <label>目標欄位</label>
+      <select onchange="CURRENT_CONFIG.kpis[${i}].column=this.value;renderLiveDashboard()">${getTableColumnsOptions(k.table, k.column)}</select>
+    `;
+    kpiWrap.appendChild(div);
+  });
+
+  const trWrap = document.getElementById('trend-editors');
+  trWrap.innerHTML = '';
+  CURRENT_CONFIG.trends.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'sub-box';
+    div.innerHTML = `
+      <label>趨勢圖 ${i + 1} 標題</label>
+      <input type="text" value="${t.title}" oninput="CURRENT_CONFIG.trends[${i}].title=this.value;renderLiveDashboard()">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label>資料工作表</label>
+          <select onchange="CURRENT_CONFIG.trends[${i}].table=this.value;renderConfigEditors();renderLiveDashboard()">${getTablesOptions(t.table)}</select>
+        </div>
+        <div>
+          <label>日期維度 (依日期遞增)</label>
+          <select onchange="CURRENT_CONFIG.trends[${i}].date_column=this.value;renderLiveDashboard()">
+            <option value="Date" ${t.date_column==='Date'?'selected':''}>每日趨勢 (Date)</option>
+            <option value="YearMonth" ${t.date_column==='YearMonth'?'selected':''}>每月趨勢 (YearMonth)</option>
+          </select>
+        </div>
+      </div>
+    `;
+    trWrap.appendChild(div);
+  });
+
+  const drWrap = document.getElementById('drill-editors');
+  drWrap.innerHTML = '';
+  CURRENT_CONFIG.charts.forEach((c, i) => {
+    const cols = c.drill_columns || [];
+    const div = document.createElement('div');
+    div.className = 'sub-box';
+    div.innerHTML = `
+      <label>下鑽圖表 ${i + 1} 標題</label>
+      <input type="text" value="${c.title}" oninput="CURRENT_CONFIG.charts[${i}].title=this.value;renderLiveDashboard()">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label>資料工作表</label>
+          <select onchange="onDrillTableChange(${i}, this.value)">${getTablesOptions(c.table)}</select>
+        </div>
+        <div>
+          <label>圖表視覺類型</label>
+          <select onchange="CURRENT_CONFIG.charts[${i}].chart_type=this.value;renderLiveDashboard()">
+            <option value="clusteredBarChart" ${c.chart_type==='clusteredBarChart'?'selected':''}>橫向排行長條圖 (Bar)</option>
+            <option value="donutChart" ${c.chart_type==='donutChart'?'selected':''}>佔比環圈圖 (Donut)</option>
+            <option value="clusteredColumnChart" ${c.chart_type==='clusteredColumnChart'?'selected':''}>直立柱狀圖 (Column)</option>
+          </select>
+        </div>
+      </div>
+      <label>🥇 第 1 層主維度 (預設顯示)</label>
+      <select onchange="updateDrillCol(${i}, 0, this.value)">${getTableColumnsOptions(c.table, cols[0] || '')}</select>
+      <label>🥈 第 2 層下鑽欄位 (點擊向下鑽研)</label>
+      <select onchange="updateDrillCol(${i}, 1, this.value)"><option value="">(無)</option>${getTableColumnsOptions(c.table, cols[1] || '')}</select>
+      <label>🥉 第 3 層下鑽欄位 (深層明細)</label>
+      <select onchange="updateDrillCol(${i}, 2, this.value)"><option value="">(無)</option>${getTableColumnsOptions(c.table, cols[2] || '')}</select>
+    `;
+    drWrap.appendChild(div);
+  });
+}
+
+function onDrillTableChange(idx, newTable) {
+  CURRENT_CONFIG.charts[idx].table = newTable;
+  const sheetCols = CURRENT_INSPECTION.sheets[newTable].category_columns;
+  CURRENT_CONFIG.charts[idx].drill_columns = sheetCols.slice(0, 3);
+  renderConfigEditors();
+  renderLiveDashboard();
+}
+
+function updateDrillCol(chartIdx, levelIdx, val) {
+  const arr = CURRENT_CONFIG.charts[chartIdx].drill_columns || [];
+  arr[levelIdx] = val;
+  CURRENT_CONFIG.charts[chartIdx].drill_columns = arr.filter(x => x && x.trim() !== '');
+  renderLiveDashboard();
+}
+
+function applyNaturalLanguagePrompt() {
+  const p = document.getElementById('nl-prompt').value.trim();
+  if (!p) { alert('請先輸入您的需求描述！'); return; }
+  const pLow = p.toLowerCase();
+  if (/醫療|綠|teal|清新/.test(pLow)) CURRENT_CONFIG.theme = 'medical_teal';
+  else if (/商務藍|深藍|sapphire|科技/.test(pLow)) CURRENT_CONFIG.theme = 'modern_sapphire';
+  else if (/暖|橘|活力|sunset/.test(pLow)) CURRENT_CONFIG.theme = 'warm_sunset';
+  else if (/多彩|豐富|漂亮|colorful/.test(pLow)) CURRENT_CONFIG.theme = 'executive_colorful';
+
+  const mMatch = p.match(/(?:排除|去除|不要|過濾|刪掉)\s*(?:(\d{4})[-/年])?(\d{1,2})月?/);
+  if (mMatch) {
+    const mn = String(mMatch[2]).padStart(2, '0');
+    Object.keys(CURRENT_INSPECTION.monthly_distribution || {}).forEach(ym => {
+      if (ym.endsWith(`-${mn}`) && !CURRENT_CONFIG.exclude_months.includes(ym)) {
+        CURRENT_CONFIG.exclude_months.push(ym);
+      }
+    });
+  }
+
+  CURRENT_CONFIG.charts.forEach(ch => {
+    const cols = CURRENT_INSPECTION.sheets[ch.table].columns.map(c => c.name);
+    if (ch.title.includes('重複用藥') && /理由|原因|備註/.test(p)) {
+      const h = ['Section_Name', 'HISSYSCODENM', 'Clinical_Reason_Subcategory', 'RXUSEMEMO'].filter(c => cols.includes(c));
+      if (h.length) ch.drill_columns = h;
+    }
+    if ((ch.title.includes('交互作用') || ch.title.includes('DDI')) && /藥品|品項|藥物/.test(p)) {
+      if (cols.includes('Drug_Pair_Display')) ch.drill_columns = ['Section_Name', 'Drug_Pair_Display', 'UDDMDPNAME', 'UDDMDPNAME2'].filter(c => cols.includes(c));
+      else if (cols.includes('Normalized_Drug_Pair')) ch.drill_columns = ['Severity_Level', 'Normalized_Drug_Pair', 'Drug_A', 'Drug_B'].filter(c => cols.includes(c));
+    }
+    cols.forEach(c1 => {
+      cols.forEach(c2 => {
+        if (c1 !== c2 && p.includes(c1) && p.includes(c2) && p.indexOf(c1) < p.indexOf(c2)) {
+          ch.drill_columns = [c1, c2];
+          ch.title = `📊 ${c1} 排行 (點擊↓下鑽至 ${c2})`;
+        }
+      });
+    });
+  });
+
+  renderConfigEditors();
+  renderLiveDashboard();
+}
+
+function getFilteredRows(tableName) {
+  const tObj = WORKBOOK_TABLES[tableName];
+  if (!tObj) return [];
+  const ex = new Set(CURRENT_CONFIG.exclude_months || []);
+  const selMonth = document.getElementById('slicer-month').value;
+  const selCat = document.getElementById('slicer-cat').value;
+  const catCol = document.getElementById('slicer-cat').dataset.col;
+
+  return tObj.rows.filter(r => {
+    if (r.YearMonth && ex.has(r.YearMonth)) return false;
+    if (selMonth && selMonth !== 'ALL' && r.YearMonth && r.YearMonth !== selMonth) return false;
+    if (selCat && selCat !== 'ALL' && catCol && (catCol in r) && String(r[catCol]) !== selCat) return false;
+    return true;
+  });
+}
+
+function computeMetric(rows, agg, col) {
+  if (!rows || rows.length === 0) return 0;
+  if (agg === 'COUNTROWS') return rows.length;
+  if (agg === 'DISTINCTCOUNT') return new Set(rows.map(r => r[col]).filter(v => v !== '' && v != null)).size;
+  if (agg === 'SUM') return rows.reduce((s, r) => s + ( parseFloat(r[col]) || 0 ), 0);
+  if (agg === 'AVERAGE') return Number((rows.reduce((s, r) => s + ( parseFloat(r[col]) || 0 ), 0) / rows.length).toFixed(2));
+  if (agg === 'MEANINGLESS_RATE') {
+    const inv = rows.reduce((s, r) => s + (r.Is_Meaningless_Memo ? 1 : 0), 0);
+    return Number(((inv / rows.length) * 100).toFixed(1));
+  }
+  return rows.length;
+}
+
+function buildDrillTreeJS(rows, drillCols, agg, valCol, depth = 0) {
+  if (!drillCols || depth >= drillCols.length || !rows.length) return [];
+  const col = drillCols[depth];
+  const groups = new Map();
+  rows.forEach(r => {
+    const k = String(r[col] ?? '').trim() || '(未填/空白)';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+  const list = [];
+  for (const [label, grp] of groups.entries()) {
+    const val = computeMetric(grp, agg, valCol);
+    const node = { label: label.slice(0, 42), value: val };
+    if (depth + 1 < drillCols.length) {
+      node.children = buildDrillTreeJS(grp, drillCols, agg, valCol, depth + 1);
+    }
+    list.push(node);
+  }
+  list.sort((a, b) => b.value - a.value);
+  return list.slice(0, 20);
+}
+
+function renderLiveDashboard() {
+  if (!CURRENT_CONFIG || Object.keys(WORKBOOK_TABLES).length === 0) return;
+  ACTIVE_CHARTS.forEach(c => c.destroy());
+  ACTIVE_CHARTS = [];
+
+  const theme = THEMES[CURRENT_CONFIG.theme] || THEMES.executive_colorful;
+  document.getElementById('db-banner').style.background = theme.banner_bg;
+  document.getElementById('db-title').textContent = '📊 ' + CURRENT_CONFIG.dashboard_title;
+  document.getElementById('db-sub').textContent = CURRENT_CONFIG.dashboard_subtitle;
+  document.getElementById('db-sub').style.color = theme.banner_sub;
+  document.getElementById('db-body').style.background = theme.canvas_bg;
+
+  // 1. KPIs
+  const kpiGrid = document.getElementById('db-kpi-grid');
+  kpiGrid.innerHTML = '';
+  CURRENT_CONFIG.kpis.forEach((k, idx) => {
+    const rows = getFilteredRows(k.table);
+    const val = computeMetric(rows, k.agg, k.column);
+    const valStr = k.agg === 'MEANINGLESS_RATE' ? `${val}%` : val.toLocaleString();
+    const st = theme.kpi_styles[idx % theme.kpi_styles.length];
+    const el = document.createElement('div');
+    el.className = 'db-kpi-card';
+    el.style.background = st.card_bg;
+    el.style.borderColor = st.border;
+    el.innerHTML = `<div class="db-kpi-hdr" style="background:${st.title_bg}">${k.title}</div>
+                    <div class="db-kpi-val" style="color:${st.callout}">${valStr}</div>`;
+    kpiGrid.appendChild(el);
+  });
+
+  // 2. Chronological Trends
+  const trGrid = document.getElementById('db-trend-grid');
+  trGrid.innerHTML = '';
+  CURRENT_CONFIG.trends.forEach((t, idx) => {
+    const rows = getFilteredRows(t.table);
+    const dcol = t.date_column || 'Date';
+    const map = new Map();
+    rows.forEach(r => {
+      const k = String(r[dcol] || '').trim();
+      if (!k || k === 'Unknown') return;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    });
+    const sortedKeys = Array.from(map.keys()).sort();
+    const vals = sortedKeys.map(k => computeMetric(map.get(k), t.agg, t.value_column));
+    const hdrBg = theme.chart_headers[(idx + 1) % theme.chart_headers.length];
+    const lineCol = theme.data_colors[idx % theme.data_colors.length];
+    const isBar = (t.chart_type || '').includes('Column');
+
+    const card = document.createElement('div');
+    card.className = 'db-vis-card';
+    card.innerHTML = `<div class="db-vis-hdr" style="background:${hdrBg}">${t.title}</div>
+                      <div class="db-chart-box"><canvas id="live_tr_${idx}"></canvas></div>`;
+    trGrid.appendChild(card);
+
+    const ch = new Chart(document.getElementById(`live_tr_${idx}`), {
+      type: isBar ? 'bar' : 'line',
+      data: {
+        labels: sortedKeys,
+        datasets: [{
+          data: vals,
+          borderColor: lineCol,
+          backgroundColor: isBar ? lineCol : lineCol + '28',
+          fill: !isBar,
+          tension: 0.25,
+          pointRadius: 3
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+      }
+    });
+    ACTIVE_CHARTS.push(ch);
+  });
+
+  // 3. Multi-Level Drill-Down Charts
+  const drGrid = document.getElementById('db-drill-grid');
+  drGrid.innerHTML = '';
+  CURRENT_CONFIG.charts.forEach((c, idx) => {
+    const rows = getFilteredRows(c.table);
+    const dcols = (c.drill_columns || []).filter(Boolean);
+    const tree = buildDrillTreeJS(rows, dcols, c.agg, c.value_column);
+    const hdrBg = theme.chart_headers[idx % theme.chart_headers.length];
+    const isDonut = (c.chart_type || '').toLowerCase().includes('donut');
+    const isHoriz = c.chart_type === 'clusteredBarChart';
+
+    const card = document.createElement('div');
+    card.className = 'db-vis-card';
+    card.innerHTML = `
+      <div class="db-vis-hdr" style="background:${hdrBg}">${c.title}</div>
+      <div class="db-drill-crumb">
+        <span id="live_crumb_${idx}"></span>
+        <button class="db-btn-up" id="live_up_${idx}">⬆ 返回上一層</button>
+      </div>
+      <div class="db-chart-box"><canvas id="live_dr_${idx}"></canvas></div>`;
+    drGrid.appendChild(card);
+
+    let stack = [{ nodes: tree, path: [] }];
+    let chartInst = null;
+    const ctx = document.getElementById(`live_dr_${idx}`);
+
+    function drawLevel() {
+      const cur = stack[stack.length - 1];
+      const colName = dcols[stack.length - 1] || '項目';
+      document.getElementById(`live_crumb_${idx}`).textContent =
+        stack.length === 1
+          ? `目前階層：${colName} (可下鑽：${dcols.join(' ➔ ')})`
+          : `下鑽路徑：${cur.path.join(' ➔ ')} (${colName})`;
+      document.getElementById(`live_up_${idx}`).style.display = stack.length > 1 ? 'inline-block' : 'none';
+
+      const labels = cur.nodes.map(n => n.label);
+      const vals = cur.nodes.map(n => n.value);
+
+      if (chartInst) chartInst.destroy();
+      chartInst = new Chart(ctx, {
+        type: isDonut ? 'doughnut' : 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: vals,
+            backgroundColor: isDonut
+              ? labels.map((_, i) => theme.data_colors[i % theme.data_colors.length])
+              : theme.data_colors[(idx + stack.length - 1) % theme.data_colors.length],
+            borderRadius: isDonut ? 0 : 5
+          }]
+        },
+        options: {
+          indexAxis: (!isDonut && isHoriz) ? 'y' : 'x',
+          responsive: true, maintainAspectRatio: false,
+          onClick: (evt, els) => {
+            if (!els || !els.length) return;
+            const clicked = cur.nodes[els[0].index];
+            if (clicked && clicked.children && clicked.children.length > 0) {
+              stack.push({ nodes: clicked.children, path: [...cur.path, clicked.label] });
+              drawLevel();
+            }
+          },
+          plugins: {
+            legend: { display: isDonut, position: 'right', labels: { boxWidth: 11, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                afterLabel: (context) => {
+                  const n = cur.nodes[context.dataIndex];
+                  return (n && n.children && n.children.length) ? '👉 點擊向下鑽研下一層' : '（已達最底層明細）';
+                }
+              }
+            }
+          }
+        }
+      });
+      ACTIVE_CHARTS.push(chartInst);
+    }
+
+    document.getElementById(`live_up_${idx}`).addEventListener('click', () => {
+      if (stack.length > 1) { stack.pop(); drawLevel(); }
+    });
+    drawLevel();
+  });
+}
+
+// ============================================================================
+// Client-Side Standalone HTML & Power BI ZIP Bundle Exporters
+// ============================================================================
+function generateStandaloneHTMLString() {
+  const theme = THEMES[CURRENT_CONFIG.theme] || THEMES.executive_colorful;
+  const kpiData = CURRENT_CONFIG.kpis.map((k, idx) => {
+    const rows = getFilteredRows(k.table);
+    const val = computeMetric(rows, k.agg, k.column);
+    return {
+      title: k.title,
+      value: k.agg === 'MEANINGLESS_RATE' ? `${val}%` : val.toLocaleString(),
+      style: theme.kpi_styles[idx % theme.kpi_styles.length]
+    };
+  });
+  const trendData = CURRENT_CONFIG.trends.map((t, idx) => {
+    const rows = getFilteredRows(t.table);
+    const dcol = t.date_column || 'Date';
+    const map = new Map();
+    rows.forEach(r => {
+      const k = String(r[dcol] || '').trim();
+      if (k && k !== 'Unknown') {
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(r);
+      }
+    });
+    const labels = Array.from(map.keys()).sort();
+    return {
+      id: `tr_${idx}`, title: t.title,
+      chart_type: (t.chart_type || '').includes('Column') ? 'bar' : 'line',
+      labels, values: labels.map(l => computeMetric(map.get(l), t.agg, t.value_column)),
+      header_bg: theme.chart_headers[(idx + 1) % theme.chart_headers.length],
+      color: theme.data_colors[idx % theme.data_colors.length]
+    };
+  });
+  const drillData = CURRENT_CONFIG.charts.map((c, idx) => {
+    const rows = getFilteredRows(c.table);
+    const dcols = (c.drill_columns || []).filter(Boolean);
+    return {
+      id: `dr_${idx}`, title: c.title,
+      chart_type: (c.chart_type || '').toLowerCase().includes('donut') ? 'doughnut' : 'bar',
+      drill_columns: dcols,
+      tree: buildDrillTreeJS(rows, dcols, c.agg, c.value_column),
+      header_bg: theme.chart_headers[idx % theme.chart_headers.length]
+    };
+  });
+
+  const payload = JSON.stringify({
+    title: CURRENT_CONFIG.dashboard_title,
+    subtitle: CURRENT_CONFIG.dashboard_subtitle,
+    theme, kpis: kpiData, trends: trendData, drills: drillData
+  });
+
+  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>${CURRENT_CONFIG.dashboard_title}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI','Microsoft JhengHei',sans-serif}
+body{background:${theme.canvas_bg};color:#0F172A;padding-bottom:36px}
+.banner{background:${theme.banner_bg};color:#fff;padding:16px 28px;display:flex;justify-content:space-between;align-items:center}
+.container{max-width:1420px;margin:18px auto;padding:0 18px;display:flex;flex-direction:column;gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kcard{border-radius:11px;overflow:hidden;text-align:center;border:2px solid #cbd5e1}
+.khdr{color:#fff;font-size:13px;font-weight:700;padding:8px}.kval{font-size:28px;font-weight:800;padding:15px}
+.trends{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.drills{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.card{background:#fff;border-radius:11px;overflow:hidden;border:1px solid #cbd5e1}
+.chdr{color:#fff;padding:10px 14px;font-size:13.5px;font-weight:700}
+.cbar{background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:6px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.bup{background:#1E40AF;color:#fff;border:none;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;display:none}
+.cbox{padding:12px;height:285px;position:relative}
+</style></head><body>
+<div class="banner"><div><h1>📊 ${CURRENT_CONFIG.dashboard_title}</h1><div style="color:${theme.banner_sub};font-size:13px;margin-top:4px">${CURRENT_CONFIG.dashboard_subtitle}</div></div></div>
+<div class="container"><div class="kpis" id="kpis"></div><div class="trends" id="trends"></div><div class="drills" id="drills"></div></div>
+<script>
+const D=${payload};
+D.kpis.forEach(k=>{const e=document.createElement('div');e.className='kcard';e.style.background=k.style.card_bg;e.style.borderColor=k.style.border;e.innerHTML='<div class="khdr" style="background:'+k.style.title_bg+'">'+k.title+'</div><div class="kval" style="color:'+k.style.callout+'">'+k.value+'</div>';document.getElementById('kpis').appendChild(e);});
+D.trends.forEach(t=>{const e=document.createElement('div');e.className='card';e.innerHTML='<div class="chdr" style="background:'+t.header_bg+'">'+t.title+'</div><div class="cbox"><canvas id="'+t.id+'"></canvas></div>';document.getElementById('trends').appendChild(e);new Chart(document.getElementById(t.id),{type:t.chart_type,data:{labels:t.labels,datasets:[{data:t.values,borderColor:t.color,backgroundColor:t.chart_type==='line'?t.color+'28':t.color,fill:t.chart_type==='line',tension:0.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});});
+D.drills.forEach((d,i)=>{const e=document.createElement('div');e.className='card';e.innerHTML='<div class="chdr" style="background:'+d.header_bg+'">'+d.title+'</div><div class="cbar"><span id="cr_'+i+'"></span><button class="bup" id="up_'+i+'">⬆ 返回上一層</button></div><div class="cbox"><canvas id="'+d.id+'"></canvas></div>';document.getElementById('drills').appendChild(e);let st=[{nodes:d.tree,path:[]}],ci=null;function draw(){const cur=st[st.length-1];document.getElementById('cr_'+i).textContent=st.length===1?'目前階層：'+(d.drill_columns[0]||''):'路徑：'+cur.path.join(' ➔ ');document.getElementById('up_'+i).style.display=st.length>1?'inline-block':'none';if(ci)ci.destroy();ci=new Chart(document.getElementById(d.id),{type:d.chart_type,data:{labels:cur.nodes.map(n=>n.label),datasets:[{data:cur.nodes.map(n=>n.value),backgroundColor:d.chart_type==='doughnut'?cur.nodes.map((_,j)=>D.theme.data_colors[j%D.theme.data_colors.length]):D.theme.data_colors[(i+st.length-1)%D.theme.data_colors.length]}]},options:{indexAxis:d.chart_type==='bar'?'y':'x',responsive:true,maintainAspectRatio:false,onClick:(ev,els)=>{if(!els.length)return;const nd=cur.nodes[els[0].index];if(nd&&nd.children&&nd.children.length){st.push({nodes:nd.children,path:[...cur.path,nd.label]});draw();}},plugins:{legend:{display:d.chart_type==='doughnut',position:'right'}}}});}document.getElementById('up_'+i).onclick=()=>{if(st.length>1){st.pop();draw();}};draw();});
+<\/script></body></html>`;
+}
+
+function downloadStandaloneHTML() {
+  const html = generateStandaloneHTMLString();
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${CURRENT_CONFIG.dashboard_title}_互動式儀表板.html`;
+  a.click();
+}
+
+async function downloadPowerBIZipBundle() {
+  const zip = new JSZip();
+  const theme = THEMES[CURRENT_CONFIG.theme] || THEMES.executive_colorful;
+
+  // 1. Add cleaned UTF-8-BOM CSVs for each table
+  Object.entries(WORKBOOK_TABLES).forEach(([tName, tObj]) => {
+    const rows = getFilteredRows(tName);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const csv = '\uFEFF' + XLSX.utils.sheet_to_csv(ws);
+    zip.file(`PowerBI_Data/${tName}.csv`, csv);
+  });
+
+  // 2. Add Power BI Custom Theme JSON
+  const pbiTheme = {
+    name: theme.name,
+    dataColors: theme.data_colors,
+    background: theme.canvas_bg,
+    foreground: "#0F172A",
+    tableAccent: theme.data_colors[0]
+  };
+  zip.file('PowerBI_Theme_專業配色主題.json', JSON.stringify(pbiTheme, null, 2));
+
+  // 3. Add Standalone HTML Dashboard
+  zip.file(`${CURRENT_CONFIG.dashboard_title}_互動式儀表板.html`, generateStandaloneHTMLString());
+
+  const content = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = `${CURRENT_CONFIG.dashboard_title}_PowerBI完整資料與主題包.zip`;
+  a.click();
+}
+
+async function buildLocalPbit() {
+  if (!IS_LOCAL_SERVER) return;
+  const banner = document.getElementById('local-build-banner');
+  banner.style.display = 'block';
+  banner.innerHTML = '⏳ 正在呼叫本機 Power BI 封裝引擎產出原生 .pbit 檔案...';
+
+  const fpath = CURRENT_INSPECTION.local_file_path || CURRENT_INSPECTION.file_path;
+  const res = await fetch('/api/build', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_path: fpath, config: CURRENT_CONFIG })
+  });
+  const data = await res.json();
+  if (data.status === 'success') {
+    banner.innerHTML = `✅ 已成功產出 Power BI 範本檔：<code>${data.pbit_path}</code> 並正在為您啟動 Power BI Desktop！`;
+    await fetch('/api/open_file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: data.pbit_path })
+    });
+  } else {
+    banner.innerHTML = `<span style="color:#E11D48;">❌ 本機封裝失敗：${data.message}</span>`;
+  }
+}
+</script>
+</body>
+</html>
