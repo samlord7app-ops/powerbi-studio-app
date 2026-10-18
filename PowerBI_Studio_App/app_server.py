@@ -75,6 +75,21 @@ class PBIStudioHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "File not found"}, 404)
             return
 
+        if parsed.path == "/api/raw_file":
+            qs = parse_qs(parsed.query)
+            fpath = qs.get("path", [""])[0]
+            if fpath and os.path.exists(fpath):
+                with open(fpath, "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            self._send_json({"error": "File not found"}, 404)
+            return
+
         self._send_json({"error": "Not found"}, 404)
 
     def do_POST(self):

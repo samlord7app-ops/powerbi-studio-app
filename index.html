@@ -172,12 +172,23 @@
     <div class="step-body">
       <div class="nl-box">
         <label style="font-weight:700;font-size:14px;color:#1E3A8A;display:block;margin-bottom:6px;">
-          💬 直接用文字告訴 APP 您想呈現的數據、下鑽關係或排除條件：
+          💬 直接用文字告訴 APP 您想呈現的數據、排行榜維度、下鑽關係、圖表類型或篩選條件（支援直接按 Enter 套用）：
         </label>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <input type="text" id="nl-prompt" style="flex:1;min-width:260px;" placeholder="例如：排除6月資料，門診科別重複用藥排行下鑽到開立理由，交互作用與跨院DDI下鑽到藥品品項，使用專業多彩風格">
-          <button class="btn btn-teal" onclick="applyNaturalLanguagePrompt()">✨ 智慧解析需求並套用</button>
+          <input type="text" id="nl-prompt" style="flex:1;min-width:260px;"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();applyNaturalLanguagePrompt();}"
+            placeholder="例如：第一張圖看開立理由排行並下鑽到藥品與備註、趨勢圖改為每月柱狀圖、只看8月、改用醫療品質風">
+          <button class="btn btn-teal" onclick="applyNaturalLanguagePrompt()">✨ 智慧解析需求並立即套用</button>
+          <button class="btn btn-outline" onclick="resetToDefaultConfig()" title="還原為初始推薦設定">🔄 還原預設</button>
         </div>
+        <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;" id="nl-quick-chips">
+          <span style="font-size:12px;color:#475569;font-weight:600;">💡 點擊快速測試指令：</span>
+          <button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="setAndRunPrompt('重複用藥看開立理由排行並下鑽到科別與備註，改用醫療品質風')">開立理由排行 ➔ 下鑽科別與備註 (醫療風)</button>
+          <button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="setAndRunPrompt('第一張圖看藥品品項排行下鑽到科別，第二張圖改成環圈圖，趨勢改為每月柱狀圖')">藥品排行＋環圈圖＋每月柱狀趨勢</button>
+          <button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="setAndRunPrompt('門診科別重複用藥排行下鑽到開立理由，交互作用下鑽到藥品品項，排除6月資料，使用專業多彩風')">科別下鑽理由＋DDI下鑽藥品 (專業多彩風)</button>
+          <button type="button" class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="setAndRunPrompt('KPI改看案件不重複數，趨勢圖改看每日折線圖，配色改為暖陽活力風')">KPI看去重案件數＋暖陽活力風</button>
+        </div>
+        <div id="nl-feedback-box" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.6;"></div>
       </div>
 
       <div class="config-grid-3">
@@ -737,7 +748,19 @@ function loadBuiltInDemoData() {
 async function loadSelectedExistingFile() {
   const path = document.getElementById('existing-files-select').value;
   if (!path) return;
-  document.getElementById('file-status').textContent = `⏳ 正在從本機載入 ${path}...`;
+  document.getElementById('file-status').textContent = `⏳ 正在從本機載入並剖析 ${path}...`;
+  try {
+    const rawRes = await fetch('/api/raw_file?path=' + encodeURIComponent(path));
+    if (rawRes.ok) {
+      const arrayBuf = await rawRes.arrayBuffer();
+      const wb = XLSX.read(arrayBuf, { type: 'array' });
+      const fname = path.split(/[\\/]/).pop();
+      processWorkbookObject(fname, wb);
+      if (CURRENT_INSPECTION) CURRENT_INSPECTION.local_file_path = path;
+      return;
+    }
+  } catch (e) {}
+
   const res = await fetch('/api/inspect_path', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -747,7 +770,6 @@ async function loadSelectedExistingFile() {
   if (data.status === 'ok') {
     CURRENT_INSPECTION = data.inspection;
     CURRENT_INSPECTION.local_file_path = path;
-    // Build lightweight preview tables or trigger local build
     onInspectionLoaded(data.inspection);
   }
 }
@@ -932,47 +954,372 @@ function updateDrillCol(chartIdx, levelIdx, val) {
   renderLiveDashboard();
 }
 
+function setAndRunPrompt(text) {
+  document.getElementById('nl-prompt').value = text;
+  applyNaturalLanguagePrompt();
+}
+
+function resetToDefaultConfig() {
+  if (!CURRENT_INSPECTION) return;
+  CURRENT_CONFIG = JSON.parse(JSON.stringify(CURRENT_INSPECTION.recommended_config));
+  document.getElementById('slicer-month').value = 'ALL';
+  document.getElementById('slicer-cat').value = 'ALL';
+  renderConfigEditors();
+  renderLiveDashboard();
+  const fb = document.getElementById('nl-feedback-box');
+  fb.style.display = 'block';
+  fb.style.background = '#EFF6FF';
+  fb.style.border = '1px solid #93C5FD';
+  fb.style.color = '#1E3A8A';
+  fb.innerHTML = '🔄 已還原為初始智慧推薦配置！';
+}
+
+// Semantic synonym dictionary mapping natural Chinese concepts to candidate column patterns
+const SEMANTIC_CONCEPTS = [
+  { keywords: ['科別', '門診科別', '部門', '單位', '診別', 'section', 'dept'], colPatterns: ['Section_Name', 'OPDSECTION', /科|部門|單位|section|dept/i], label: '門診科別/部門' },
+  { keywords: ['開立理由', '法定理由', '申報代碼', '理由', '原因', 'reason'], colPatterns: ['HISSYSCODENM', 'Clinical_Reason_Subcategory', 'RXUSEMEMO', /理由|原因|代碼|reason|code/i], label: '開立理由/原因' },
+  { keywords: ['實質原因', '原因細分', '臨床原因', '細分類'], colPatterns: ['Clinical_Reason_Subcategory', 'HISSYSCODENM', 'RXUSEMEMO'], label: '臨床實質原因分類' },
+  { keywords: ['備註品質', '書寫品質', '無效備註', '空白備註'], colPatterns: ['Memo_Quality', 'RXUSEMEMO'], label: '備註書寫品質' },
+  { keywords: ['備註', '說明', '文字明細', 'memo', 'comment'], colPatterns: ['RXUSEMEMO', 'COMMENTS', 'Memo_Quality', /備註|說明|memo|comment/i], label: '處方備註/說明' },
+  { keywords: ['藥物組合', '藥品組合', '交互作用組合', '配對'], colPatterns: ['Drug_Pair_Display', 'Normalized_Drug_Pair', 'UDDMDPNAME', 'Drug_A'], label: '藥物交互作用組合' },
+  { keywords: ['藥品品項', '藥品', '藥名', '藥物', '品項', '處方藥', '產品', '品名', 'drug', 'item'], colPatterns: ['UDDMDPNAME', 'Drug_Pair_Display', 'Normalized_Drug_Pair', 'Drug_A', 'UDDMDPNAME2', 'Drug_B', /藥|品項|產品|品名|名稱|drug|item|product|name/i], label: '藥品/品項' },
+  { keywords: ['第二藥品', '併用藥品', '藥品2'], colPatterns: ['UDDMDPNAME2', 'Drug_B'], label: '併用藥品2' },
+  { keywords: ['嚴重度', '嚴重程度', '風險等級', '等級', '風險', 'severity'], colPatterns: ['Severity_Level', /嚴重|等級|風險|severity|level|grade/i], label: '嚴重程度/等級' },
+  { keywords: ['案件', '案號', '病歷', '單號', '人次', 'case'], colPatterns: ['OPDCASENO', 'CASE_NO', 'ID', /案號|單號|病歷|case|id/i], label: '案件/單號' },
+  { keywords: ['月份', '年月', '各月'], colPatterns: ['YearMonth', /月|month/i], label: '月份' },
+  { keywords: ['日期', '每日', '看診日'], colPatterns: ['Date', 'OPDDATE', /日|date/i], label: '日期' }
+];
+
+function resolveColumnsFromText(clause, tableName) {
+  const sheet = CURRENT_INSPECTION.sheets[tableName];
+  if (!sheet) return [];
+  const availCols = sheet.columns.map(c => c.name);
+  const matched = [];
+
+  // Find all concepts or literal column names mentioned in the clause, ordered by appearance position in clause
+  const hits = [];
+
+  // 1. Direct column name match (case-insensitive)
+  availCols.forEach(col => {
+    const idx = clause.toLowerCase().indexOf(col.toLowerCase());
+    if (idx !== -1) {
+      hits.push({ pos: idx, cols: [col], label: col });
+    }
+  });
+
+  // 2. Semantic concept match
+  SEMANTIC_CONCEPTS.forEach(concept => {
+    let earliestPos = Infinity;
+    concept.keywords.forEach(kw => {
+      const idx = clause.toLowerCase().indexOf(kw.toLowerCase());
+      if (idx !== -1 && idx < earliestPos) earliestPos = idx;
+    });
+    if (earliestPos !== Infinity) {
+      const resolved = [];
+      concept.colPatterns.forEach(pat => {
+        if (typeof pat === 'string') {
+          if (availCols.includes(pat) && !resolved.includes(pat)) resolved.push(pat);
+        } else if (pat instanceof RegExp) {
+          availCols.forEach(c => {
+            if (pat.test(c) && !resolved.includes(c)) resolved.push(c);
+          });
+        }
+      });
+      if (resolved.length > 0) {
+        hits.push({ pos: earliestPos, cols: resolved, label: concept.label });
+      }
+    }
+  });
+
+  // 3. Fuzzy 2-char Chinese substring match against column names
+  availCols.forEach(col => {
+    for (let i = 0; i <= col.length - 2; i++) {
+      const sub = col.slice(i, i + 2);
+      if (/[\u4e00-\u9fff]{2}/.test(sub)) {
+        const idx = clause.indexOf(sub);
+        if (idx !== -1) {
+          hits.push({ pos: idx, cols: [col], label: col });
+        }
+      }
+    }
+  });
+
+  hits.sort((a, b) => a.pos - b.pos);
+  hits.forEach(h => {
+    h.cols.forEach(c => {
+      if (!matched.includes(c)) matched.push(c);
+    });
+  });
+
+  return matched;
+}
+
+function resolveTargetTable(clause) {
+  const sheets = CURRENT_INSPECTION.sheets;
+  const tNames = Object.keys(sheets);
+  for (const t of tNames) {
+    const orig = sheets[t].original_sheet_name;
+    if (clause.includes(orig) || clause.includes(t)) return t;
+  }
+  if (/重複用藥/.test(clause)) {
+    const found = tNames.find(t => t.includes('重複') || sheets[t].original_sheet_name.includes('重複'));
+    if (found) return found;
+  }
+  if (/雲端|跨院|api/i.test(clause)) {
+    const found = tNames.find(t => /api|雲端|跨院/i.test(t) || /api|雲端|跨院/i.test(sheets[t].original_sheet_name));
+    if (found) return found;
+  }
+  if (/院內交互|交互作用理由|處方交互/.test(clause)) {
+    const found = tNames.find(t => t.includes('交互作用理由') || (!/api/i.test(t) && t.includes('交互')));
+    if (found) return found;
+  }
+  if (/交互作用|ddi/i.test(clause)) {
+    const found = tNames.find(t => t.includes('交互') || /ddi/i.test(t));
+    if (found) return found;
+  }
+  return null;
+}
+
 function applyNaturalLanguagePrompt() {
   const p = document.getElementById('nl-prompt').value.trim();
-  if (!p) { alert('請先輸入您的需求描述！'); return; }
-  const pLow = p.toLowerCase();
-  if (/醫療|綠|teal|清新/.test(pLow)) CURRENT_CONFIG.theme = 'medical_teal';
-  else if (/商務藍|深藍|sapphire|科技/.test(pLow)) CURRENT_CONFIG.theme = 'modern_sapphire';
-  else if (/暖|橘|活力|sunset/.test(pLow)) CURRENT_CONFIG.theme = 'warm_sunset';
-  else if (/多彩|豐富|漂亮|colorful/.test(pLow)) CURRENT_CONFIG.theme = 'executive_colorful';
+  const fb = document.getElementById('nl-feedback-box');
+  if (!p) {
+    fb.style.display = 'block';
+    fb.style.background = '#FFF1F2';
+    fb.style.border = '1px solid #FDA4AF';
+    fb.style.color = '#BE123C';
+    fb.innerHTML = '⚠️ 請先在上方輸入框填寫您的需求（或點擊上方的「快速測試指令」按鈕）！';
+    return;
+  }
 
-  const mMatch = p.match(/(?:排除|去除|不要|過濾|刪掉)\s*(?:(\d{4})[-/年])?(\d{1,2})月?/);
-  if (mMatch) {
-    const mn = String(mMatch[2]).padStart(2, '0');
+  const changes = [];
+  const pLow = p.toLowerCase();
+
+  // 1. Theme detection
+  if (/醫療|綠|teal|清新/.test(pLow)) {
+    CURRENT_CONFIG.theme = 'medical_teal';
+    changes.push('🎨 配色主題已切換為【Medical Teal & Coral 醫療品質風】');
+  } else if (/商務藍|深藍|sapphire|科技|藍色/.test(pLow)) {
+    CURRENT_CONFIG.theme = 'modern_sapphire';
+    changes.push('🎨 配色主題已切換為【Modern Sapphire 現代商務藍】');
+  } else if (/暖|橘|紅|活力|sunset/.test(pLow)) {
+    CURRENT_CONFIG.theme = 'warm_sunset';
+    changes.push('🎨 配色主題已切換為【Warm Sunset 暖陽活力風】');
+  } else if (/多彩|豐富|漂亮|colorful|專業/.test(pLow)) {
+    CURRENT_CONFIG.theme = 'executive_colorful';
+    changes.push('🎨 配色主題已切換為【Executive Colorful 專業多彩風】');
+  }
+
+  // 2. Title modification
+  const tMatch = p.match(/標題(?:改為|設為|改成|是)[:：\s]*([^，,。；;]+)/);
+  if (tMatch) {
+    CURRENT_CONFIG.dashboard_title = tMatch[1].trim();
+    changes.push(`📌 儀表板主標題已改為「${CURRENT_CONFIG.dashboard_title}」`);
+  }
+
+  // 3. Month Exclusion ("排除6月", "不要6月") OR Month Filter ("只看8月", "篩選9月")
+  const exMatches = [...p.matchAll(/(?:排除|去除|不要|過濾|刪掉)\s*(?:(\d{4})[-/年])?(\d{1,2})\s*月?/g)];
+  exMatches.forEach(m => {
+    const mn = String(m[2]).padStart(2, '0');
     Object.keys(CURRENT_INSPECTION.monthly_distribution || {}).forEach(ym => {
-      if (ym.endsWith(`-${mn}`) && !CURRENT_CONFIG.exclude_months.includes(ym)) {
-        CURRENT_CONFIG.exclude_months.push(ym);
+      if (ym.endsWith(`-${mn}`)) {
+        if (!CURRENT_CONFIG.exclude_months.includes(ym)) CURRENT_CONFIG.exclude_months.push(ym);
+        changes.push(`📅 已自動排除【${ym}】月份資料`);
+      }
+    });
+  });
+
+  const onlyMonthMatch = p.match(/(?:只看|僅看|篩選|鎖定)\s*(?:(\d{4})[-/年])?(\d{1,2})\s*月/);
+  if (onlyMonthMatch) {
+    const mn = String(onlyMonthMatch[2]).padStart(2, '0');
+    const targetYm = Object.keys(CURRENT_INSPECTION.monthly_distribution || {}).find(ym => ym.endsWith(`-${mn}`));
+    if (targetYm) {
+      document.getElementById('slicer-month').value = targetYm;
+      changes.push(`🔍 月份篩選器已鎖定為【${targetYm}】`);
+    }
+  } else if (/全部月份|所有月份/.test(p)) {
+    document.getElementById('slicer-month').value = 'ALL';
+    changes.push('🔍 月份篩選器已恢復為【全部月份】');
+  }
+
+  // Category Slicer filter if user says "只看心臟科" / "只看內科" etc.
+  const catSel = document.getElementById('slicer-cat');
+  if (catSel && catSel.options.length > 1) {
+    for (let i = 1; i < catSel.options.length; i++) {
+      const optVal = catSel.options[i].value;
+      const cleanOpt = optVal.replace(/\s*\([^)]*\)/, '').trim();
+      if (cleanOpt.length >= 2 && (p.includes(`只看${cleanOpt}`) || p.includes(`篩選${cleanOpt}`) || p.includes(`鎖定${cleanOpt}`))) {
+        catSel.value = optVal;
+        changes.push(`🏥 類別篩選器已自動切換為【${optVal}】`);
+        break;
+      }
+    }
+  }
+
+  // 4. Split prompt into clauses to parse specific chart / trend / KPI modifications
+  const clauses = p.split(/[，,。；;！!\n]+/).map(s => s.trim()).filter(Boolean);
+
+  clauses.forEach(clause => {
+    const cLow = clause.toLowerCase();
+
+    // (A) Check if clause targets KPI cards
+    if (/kpi|指標卡|卡片|去重|不重複|無效備註率|總計|平均/.test(cLow) && !/圖|排行|下鑽|趨勢/.test(cLow)) {
+      if (/不重複|去重|人次|案件數/.test(cLow)) {
+        CURRENT_CONFIG.kpis.forEach(k => {
+          const sheetCols = CURRENT_INSPECTION.sheets[k.table].columns.map(c => c.name);
+          const caseCol = sheetCols.find(c => /CASE|案號|單號|ID/i.test(c)) || sheetCols[0];
+          k.agg = 'DISTINCTCOUNT';
+          k.column = caseCol;
+          k.title = `🎯 ${CURRENT_INSPECTION.sheets[k.table].original_sheet_name} 不重複(${caseCol})`;
+        });
+        changes.push('🏅 頂部 KPI 卡片已改為計算【不重複計數 (DISTINCTCOUNT)】');
+      } else if (/平均/.test(cLow)) {
+        CURRENT_CONFIG.kpis.forEach(k => { k.agg = 'AVERAGE'; });
+        changes.push('🏅 KPI 統計方式已改為【平均值 (AVERAGE)】');
+      }
+      return;
+    }
+
+    // (B) Check if clause targets Trend Charts
+    if (/趨勢|折線|面積圖|每日|每月|按月|按日|月份統計/.test(cLow) && !/排行|下鑽/.test(cLow)) {
+      let targetTrends = [0, 1];
+      if (/第一張趨勢|趨勢1|左邊趨勢/.test(cLow)) targetTrends = [0];
+      else if (/第二張趨勢|趨勢2|右邊趨勢/.test(cLow)) targetTrends = [1];
+
+      targetTrends.forEach(tIdx => {
+        const tr = CURRENT_CONFIG.trends[tIdx];
+        if (!tr) return;
+        const tbl = resolveTargetTable(clause);
+        if (tbl) tr.table = tbl;
+        const origName = CURRENT_INSPECTION.sheets[tr.table].original_sheet_name;
+
+        if (/每月|月份|按月|月趨勢/.test(cLow)) {
+          tr.date_column = 'YearMonth';
+          tr.title = `📊 每月${origName}趨勢 (依月份遞增排序)`;
+        } else if (/每日|按日|日期|日趨勢/.test(cLow)) {
+          tr.date_column = 'Date';
+          tr.title = `📈 每日${origName}趨勢 (依日期遞增排序)`;
+        }
+        if (/柱狀|長條|直立/.test(cLow)) {
+          tr.chart_type = 'clusteredColumnChart';
+        } else if (/折線|面積|曲線/.test(cLow)) {
+          tr.chart_type = 'areaChart';
+        }
+      });
+      changes.push(`📈 已更新時間趨勢圖設定（維度：${CURRENT_CONFIG.trends[0].date_column === 'YearMonth' ? '每月 YearMonth' : '每日 Date'}，圖表類型：${CURRENT_CONFIG.trends[0].chart_type === 'clusteredColumnChart' ? '柱狀圖' : '折線面積圖'}）`);
+      return;
+    }
+
+    // (C) Check if clause targets Drill-Down / Ranking / Distribution Charts
+    let targetChartIndices = [];
+    if (/第一張圖|圖1|圖一|左圖|第1張/.test(cLow)) targetChartIndices = [0];
+    else if (/第二張圖|圖2|圖二|中圖|第2張/.test(cLow)) targetChartIndices = [1];
+    else if (/第三張圖|圖3|圖三|右圖|第3張/.test(cLow)) targetChartIndices = [2];
+    else {
+      // Match by subject table mentioned in the clause
+      const tbl = resolveTargetTable(clause);
+      if (tbl) {
+        CURRENT_CONFIG.charts.forEach((ch, idx) => {
+          if (ch.table === tbl) targetChartIndices.push(idx);
+        });
+        if (targetChartIndices.length === 0) {
+          // Switch chart 0 to this table if none currently points to it
+          CURRENT_CONFIG.charts[0].table = tbl;
+          targetChartIndices = [0];
+        }
+      }
+    }
+
+    // Check chart type keywords in this clause
+    let newChartType = null;
+    if (/圓餅|環圈|甜甜圈|佔比圖|pie|donut/i.test(cLow)) newChartType = 'donutChart';
+    else if (/直立柱狀|柱狀圖|直條圖|column/i.test(cLow)) newChartType = 'clusteredColumnChart';
+    else if (/橫向|長條圖|條形圖|bar/i.test(cLow)) newChartType = 'clusteredBarChart';
+
+    // If no specific chart index was identified yet, apply to chart 0 (or all matching charts)
+    const indicesToInspect = targetChartIndices.length > 0 ? targetChartIndices : [0, 1, 2];
+
+    let clauseApplied = false;
+    indicesToInspect.forEach((cIdx, loopIdx) => {
+      // If user didn't specify which chart and didn't specify a table, apply specific dimension changes primarily to chart 0 unless they said "全部圖表"
+      if (targetChartIndices.length === 0 && loopIdx > 0 && !/全部|所有|每張/.test(cLow) && !newChartType) return;
+
+      const ch = CURRENT_CONFIG.charts[cIdx];
+      if (!ch) return;
+      const matchedCols = resolveColumnsFromText(clause, ch.table);
+
+      if (newChartType && (targetChartIndices.length > 0 || loopIdx === 0 || /全部|所有/.test(cLow))) {
+        ch.chart_type = newChartType;
+        const typeName = newChartType === 'donutChart' ? '佔比環圈圖' : (newChartType === 'clusteredColumnChart' ? '直立柱狀圖' : '橫向長條圖');
+        changes.push(`📊 下鑽圖表 ${cIdx + 1} 圖表類型已改為【${typeName}】`);
+        clauseApplied = true;
+      }
+
+      if (matchedCols.length > 0) {
+        // Distinguish between "下鑽到 X" (keep level 1 if only drill target was mentioned) vs "看 X 排行 下鑽到 Y"
+        const isOnlyDrillChange = /^(?:下鑽|向下鑽研|鑽研)(?:改為|到|至)/.test(clause) || (!/排行|分佈|分析|看/.test(clause.split(/下鑽|鑽研/)[0]) && /下鑽|鑽研/.test(clause) && matchedCols.length === 1);
+        if (isOnlyDrillChange && ch.drill_columns && ch.drill_columns.length > 0) {
+          const lvl0 = ch.drill_columns[0];
+          ch.drill_columns = [lvl0, ...matchedCols.filter(c => c !== lvl0)].slice(0, 4);
+        } else {
+          // Supplement remaining drill levels from existing or category columns so drill-down stays multi-level
+          const sheetCats = CURRENT_INSPECTION.sheets[ch.table].category_columns.filter(c => !['Date', 'YearMonth'].includes(c));
+          const combined = [...matchedCols];
+          (ch.drill_columns || []).concat(sheetCats).forEach(c => {
+            if (!combined.includes(c) && combined.length < 3) combined.push(c);
+          });
+          ch.drill_columns = combined.slice(0, 4);
+        }
+        const origSheet = CURRENT_INSPECTION.sheets[ch.table].original_sheet_name;
+        ch.title = `📊 ${origSheet}：${ch.drill_columns[0]} 排行 (點擊↓下鑽至 ${ch.drill_columns.slice(1).join(' ➔ ') || '明細'})`;
+        changes.push(`🔍 下鑽圖表 ${cIdx + 1} (${origSheet}) 已更新階層為：【${ch.drill_columns.join(' ➔ ')}】`);
+        clauseApplied = true;
+      }
+    });
+  });
+
+  // Fallback: if the user typed a short column/concept name without clauses that matched above, try matching across all sheets
+  if (changes.length === 0) {
+    Object.keys(CURRENT_INSPECTION.sheets).forEach((tName, idx) => {
+      const mCols = resolveColumnsFromText(p, tName);
+      if (mCols.length > 0 && idx < CURRENT_CONFIG.charts.length) {
+        const ch = CURRENT_CONFIG.charts[idx];
+        ch.table = tName;
+        const extras = CURRENT_INSPECTION.sheets[tName].category_columns.filter(c => !mCols.includes(c) && !['Date', 'YearMonth'].includes(c));
+        ch.drill_columns = [...mCols, ...extras].slice(0, 3);
+        const origSheet = CURRENT_INSPECTION.sheets[tName].original_sheet_name;
+        ch.title = `📊 ${origSheet}：${ch.drill_columns[0]} 分析 (點擊↓下鑽至 ${ch.drill_columns.slice(1).join(' ➔ ')})`;
+        changes.push(`🔍 圖表 ${idx + 1} 已根據關鍵字切換為【${origSheet}：${ch.drill_columns.join(' ➔ ')}】`);
       }
     });
   }
 
-  CURRENT_CONFIG.charts.forEach(ch => {
-    const cols = CURRENT_INSPECTION.sheets[ch.table].columns.map(c => c.name);
-    if (ch.title.includes('重複用藥') && /理由|原因|備註/.test(p)) {
-      const h = ['Section_Name', 'HISSYSCODENM', 'Clinical_Reason_Subcategory', 'RXUSEMEMO'].filter(c => cols.includes(c));
-      if (h.length) ch.drill_columns = h;
-    }
-    if ((ch.title.includes('交互作用') || ch.title.includes('DDI')) && /藥品|品項|藥物/.test(p)) {
-      if (cols.includes('Drug_Pair_Display')) ch.drill_columns = ['Section_Name', 'Drug_Pair_Display', 'UDDMDPNAME', 'UDDMDPNAME2'].filter(c => cols.includes(c));
-      else if (cols.includes('Normalized_Drug_Pair')) ch.drill_columns = ['Severity_Level', 'Normalized_Drug_Pair', 'Drug_A', 'Drug_B'].filter(c => cols.includes(c));
-    }
-    cols.forEach(c1 => {
-      cols.forEach(c2 => {
-        if (c1 !== c2 && p.includes(c1) && p.includes(c2) && p.indexOf(c1) < p.indexOf(c2)) {
-          ch.drill_columns = [c1, c2];
-          ch.title = `📊 ${c1} 排行 (點擊↓下鑽至 ${c2})`;
-        }
-      });
-    });
+  // Sync exclude month checkboxes if changed
+  document.querySelectorAll('.exclude-month-cb').forEach(cb => {
+    cb.checked = CURRENT_CONFIG.exclude_months.includes(cb.value);
   });
 
   renderConfigEditors();
   renderLiveDashboard();
+
+  fb.style.display = 'block';
+  if (changes.length > 0) {
+    fb.style.background = '#ECFDF5';
+    fb.style.border = '1px solid #6EE7B7';
+    fb.style.color = '#065F46';
+    fb.innerHTML = `<b>✅ 智慧解析完成！已自動為您套用以下 ${changes.length} 項修改（下方設定器與即時圖表已同步更新）：</b><br>` +
+      changes.map(c => `&nbsp;&nbsp;• ${c}`).join('<br>');
+  } else {
+    const allColSample = Object.values(CURRENT_INSPECTION.sheets)
+      .map(s => `<b>${s.original_sheet_name}</b>: ${s.columns.slice(0, 6).map(c => c.name).join(', ')}`)
+      .join(' ｜ ');
+    fb.style.background = '#FFFBEB';
+    fb.style.border = '1px solid #FCD34D';
+    fb.style.color = '#92400E';
+    fb.innerHTML = `💡 未從「${p}」偵測到對應的欄位或關鍵字。<br>` +
+      `您可以嘗試輸入如：<b>「看科別排行下鑽到理由與備註」</b>、<b>「第一張圖看藥品排行」</b>、<b>「改成環圈圖」</b>、<b>「趨勢改為每月」</b>、<b>「改用醫療風」</b>。<br>` +
+      `<span style="font-size:12px;color:#78350F;">目前資料表可用欄位參考：${allColSample}</span>`;
+  }
 }
 
 function getFilteredRows(tableName) {
